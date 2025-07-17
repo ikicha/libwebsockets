@@ -1,5 +1,5 @@
 project(lws-minimal-http-client-multi C)
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 find_package(libwebsockets CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
@@ -75,7 +75,7 @@ else()
 		add_test(NAME st_hcmp_srv COMMAND
 				${CMAKE_SOURCE_DIR}/scripts/ctest-background.sh
 					hcmp_srv ${VALGRIND} --tool=memcheck $<TARGET_FILE:test-server> -s
-					-r ${CMAKE_SOURCE_DIR}/destdir/usr/local/share/libwebsockets-test-server/
+					-r ${CMAKE_BINARY_DIR}/share/libwebsockets-test-server/
 					--port 1${PORT_HCM_SRV})
 		add_test(NAME ki_hcmp_srv COMMAND
 				${CMAKE_SOURCE_DIR}/scripts/ctest-background-kill.sh
@@ -93,7 +93,7 @@ else()
 		add_test(NAME st_hcmp_srv COMMAND
 				${CMAKE_SOURCE_DIR}/scripts/ctest-background.sh
 					hcmp_srv $<TARGET_FILE:test-server> -s
-					-r ${CMAKE_SOURCE_DIR}/destdir/usr/local/share/libwebsockets-test-server/
+					-r ${CMAKE_BINARY_DIR}/share/libwebsockets-test-server/
 					--port 1${PORT_HCM_SRV} )
 		add_test(NAME ki_hcmp_srv COMMAND
 				${CMAKE_SOURCE_DIR}/scripts/ctest-background-kill.sh
@@ -106,6 +106,9 @@ endif()
        		WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/minimal-examples-lowlevel/http-server/minimal-http-server-tls
 		FIXTURES_SETUP hcm_srv
 		TIMEOUT 800)
+	set_property(TEST st_hcm_srv PROPERTY ENVIRONMENT SAI_LIST_PORT=${PORT_HCM_SRV} )
+	set_property(TEST st_hcm_srv PROPERTY ENVIRONMENT VENDOR=$ENV{VENDOR} )
+
 	set_tests_properties(ki_hcm_srv PROPERTIES
 		FIXTURES_CLEANUP hcm_srv)
 
@@ -113,6 +116,9 @@ endif()
        		WORKING_DIRECTORY .
 		FIXTURES_SETUP hcmp_srv
 		TIMEOUT 800)
+	set_property(TEST st_hcmp_srv PROPERTY ENVIRONMENT SAI_LIST_PORT=1${PORT_HCM_SRV} )
+	set_property(TEST st_hcmp_srv PROPERTY ENVIRONMENT VENDOR=$ENV{VENDOR} )
+
 	set_tests_properties(ki_hcmp_srv PROPERTIES
 		FIXTURES_CLEANUP hcmp_srv)
 
@@ -200,7 +206,7 @@ endif()
 			     PROPERTIES
 			     	FIXTURES_REQUIRED "hcmp_srv"
 			     	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/minimal-examples-lowlevel/http-client/minimal-http-client-multi
-			     	TIMEOUT 20)
+			     	TIMEOUT 30)
 
 endif(NOT WIN32 AND LWS_WITH_SERVER)
 

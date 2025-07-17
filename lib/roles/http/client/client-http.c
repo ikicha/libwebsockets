@@ -30,12 +30,17 @@ lws_client_http_body_pending(struct lws *wsi, int something_left_to_send)
 	wsi->client_http_body_pending = !!something_left_to_send;
 }
 
+/*
+ * Returns 0 for wsi survived OK, or LWS_HPI_RET_WSI_ALREADY_DIED
+ * meaning the wsi was destroyed by us before return.
+ */
+	
 int
 lws_http_client_socket_service(struct lws *wsi, struct lws_pollfd *pollfd)
 {
 	struct lws_context *context = wsi->a.context;
 	struct lws_context_per_thread *pt = &context->pt[(int)wsi->tsi];
-	char *p = (char *)&pt->serv_buf[0];
+	char *p = (char *)&pt->serv_buf[0], *end = p + wsi->a.context->pt_serv_buf_size;
 #if defined(LWS_WITH_TLS)
 	char ebuf[128];
 #endif
@@ -54,7 +59,7 @@ lws_http_client_socket_service(struct lws *wsi, struct lws_pollfd *pollfd)
 		if (!lws_client_connect_2_dnsreq(wsi)) {
 			/* closed */
 			lwsl_client("closed\n");
-			return -1;
+			return LWS_HPI_RET_WSI_ALREADY_DIED;
 		}
 
 		/* either still pending connection, or changed mode */
@@ -69,7 +74,7 @@ lws_http_client_socket_service(struct lws *wsi, struct lws_pollfd *pollfd)
 		if (pollfd->revents & LWS_POLLOUT)
 			if (lws_client_connect_3_connect(wsi, NULL, NULL, 0, NULL) == NULL) {
 				lwsl_client("closed\n");
-				return -1;
+				return LWS_HPI_RET_WSI_ALREADY_DIED;
 			}
 		break;
 
@@ -137,7 +142,7 @@ lws_http_client_socket_service(struct lws *wsi, struct lws_pollfd *pollfd)
 			goto bail3;
 		}
 
-		lwsl_info("%s: proxy connection extablished\n", __func__);
+		lwsl_info("%s: proxy connection established\n", __func__);
 
 		/* clear his proxy connection timeout */
 
@@ -163,8 +168,11 @@ lws_http_client_socket_service(struct lws *wsi, struct lws_pollfd *pollfd)
 #if defined(LWS_WITH_SOCKS5)
 start_ws_handshake:
 #endif
-		if (lws_change_pollfd(wsi, LWS_POLLOUT, 0))
-			return -1;
+		if (lws_change_pollfd(wsi, LWS_POLLOUT, 0)) {
+			cce = "unable to clear POLLOUT";
+			/* turn whatever went wrong into a clean close */
+			goto bail3;
+		}
 
 #if defined(LWS_ROLE_H2) || defined(LWS_WITH_TLS)
 		if (
@@ -257,8 +265,8 @@ start_ws_handshake:
 	case LRS_H1C_ISSUE_HANDSHAKE2:
 
 hs2:
-
-		p = lws_generate_client_handshake(wsi, p);
+		p = lws_generate_client_handshake(wsi, p,
+						  lws_ptr_diff_size_t(end, p));
 		if (p == NULL) {
 			if (wsi->role_ops == &role_ops_raw_skt
 #if defined(LWS_ROLE_RAW_FILE)
@@ -286,7 +294,7 @@ hs2:
 			lwsl_debug("ERROR writing to client socket\n");
 			lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NOSTATUS,
 					   "cws");
-			return 0;
+			return LWS_HPI_RET_WSI_ALREADY_DIED;
 		case LWS_SSL_CAPABLE_MORE_SERVICE:
 			lws_callback_on_writable(wsi);
 			break;
@@ -376,8 +384,10 @@ client_http_body_sent:
 		}
 
 		if (pollfd->revents & LWS_POLLOUT)
-			if (lws_change_pollfd(wsi, LWS_POLLOUT, 0))
-				return -1;
+			if (lws_change_pollfd(wsi, LWS_POLLOUT, 0)) {
+				cce = "Unable to clear POLLOUT";
+				goto bail3;
+			}
 
 		if (!(pollfd->revents & LWS_POLLIN))
 			break;
@@ -443,7 +453,7 @@ client_http_body_sent:
 			if (lws_buflist_aware_finished_consuming(wsi, &eb, m,
 								 buffered,
 								 __func__))
-			        return -1;
+			        goto bail3;
 
 			/*
 			 * coverity: uncomment if extended
@@ -486,7 +496,7 @@ bail3:
 		lws_inform_client_conn_fail(wsi, (void *)cce, strlen(cce));
 
 		lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NOSTATUS, "cbail3");
-		return -1;
+		return LWS_HPI_RET_WSI_ALREADY_DIED;
 
 	default:
 		break;
@@ -981,7 +991,8 @@ lws_client_interpret_server_handshake(struct lws *wsi)
 					    LRS_ESTABLISHED, &role_ops_h1);
 			}
 #else
-			return -1;
+			cce = "h1 not built";
+			goto bail3;
 #endif
 		}
 
@@ -1212,7 +1223,7 @@ lws_client_interpret_server_handshake(struct lws *wsi)
 		lws_close_free_wsi(wsi, LWS_CLOSE_STATUS_NOSTATUS, "redir");
 		wsi->a.opaque_user_data = opaque;
 
-		return -1;
+		return LWS_HPI_RET_WSI_ALREADY_DIED;
 	}
 
 	/* if h1 KA is allowed, enable the queued pipeline guys */
@@ -1373,11 +1384,18 @@ lws_client_interpret_server_handshake(struct lws *wsi)
 		 * content-length of zero?  If so, and it's not H2 which will
 		 * notice it via END_STREAM, this transaction is already
 		 * completed at the end of the header processing...
+		 * We also completed it if the request method is HEAD which as
+		 * no content leftover.
+		 * Or if the response status code is 204 : No Content
 		 */
-		if (!wsi->mux_substream && !wsi->client_mux_substream &&
-		    lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_CONTENT_LENGTH) &&
-		    !wsi->http.rx_content_length)
-		        return !!lws_http_transaction_completed_client(wsi);
+		simp = lws_hdr_simple_ptr(wsi, _WSI_TOKEN_CLIENT_METHOD);
+		if (!wsi->mux_substream &&
+		    !wsi->client_mux_substream &&
+			(204 == lws_http_client_http_response(wsi) ||
+			 (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_CONTENT_LENGTH) &&
+				(!wsi->http.rx_content_length ||
+				(simp && !strcmp(simp,"HEAD"))))))
+				return !!lws_http_transaction_completed_client(wsi);
 
 		/*
 		 * We can also get a case where it's http/1 and there's no
@@ -1427,7 +1445,7 @@ bail2:
 	/* closing will free up his parsing allocations */
 	lws_close_free_wsi(wsi, (enum lws_close_status)close_reason, "c hs interp");
 
-	return 1;
+	return LWS_HPI_RET_WSI_ALREADY_DIED;
 }
 #endif
 
@@ -1503,11 +1521,11 @@ lws_client_http_multipart(struct lws *wsi, const char *name,
 }
 
 char *
-lws_generate_client_handshake(struct lws *wsi, char *pkt)
+lws_generate_client_handshake(struct lws *wsi, char *pkt, size_t pkt_len)
 {
 	const char *meth, *pp = lws_hdr_simple_ptr(wsi,
 				_WSI_TOKEN_CLIENT_SENT_PROTOCOLS), *path;
-	char *p = pkt, *p1, *end = p + wsi->a.context->pt_serv_buf_size;
+	char *p = pkt, *p1, *end = p + pkt_len;
 
 	meth = lws_hdr_simple_ptr(wsi, _WSI_TOKEN_CLIENT_METHOD);
 	if (!meth) {
@@ -1640,7 +1658,8 @@ lws_generate_client_handshake(struct lws *wsi, char *pkt)
 		const char *conn1 = "";
 	//	if (!wsi->client_pipeline)
 	//		conn1 = "close, ";
-		p = lws_generate_client_ws_handshake(wsi, p, conn1);
+		p = lws_generate_client_ws_handshake(wsi, p, conn1,
+						     lws_ptr_diff_size_t(end, p));
                 if (!p)
                     return NULL;
 	} else

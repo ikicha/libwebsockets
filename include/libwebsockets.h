@@ -44,8 +44,18 @@ extern "C" {
 #if defined(LWS_HAVE_NET_ETHERNET_H)
 #include <net/ethernet.h>
 #endif
+/* NetBSD */
+#if defined(LWS_HAVE_NET_IF_ETHER_H)
+#include <net/if_ether.h>
+#endif
 #if defined(_WIN32) && !defined(ETHER_ADDR_LEN)
 #define ETHER_ADDR_LEN 6
+#endif
+#if defined (__sun)
+	#include <sys/ethernet.h>
+	#if !defined(ETHER_ADDR_LEN) && defined(ETHERADDRL)
+		#define ETHER_ADDR_LEN ETHERADDRL
+	#endif
 #endif
 #define LWS_ETHER_ADDR_LEN ETHER_ADDR_LEN
 
@@ -693,13 +703,16 @@ lws_fx_string(const lws_fx_t *a, char *buf, size_t size);
 
 #include <libwebsockets/lws-ota.h>
 #include <libwebsockets/lws-system.h>
+#include <libwebsockets/lws-callbacks.h>
+
 #if defined(LWS_WITH_NETWORK)
 #include <libwebsockets/lws-ws-close.h>
-#include <libwebsockets/lws-callbacks.h>
 #include <libwebsockets/lws-ws-state.h>
 #include <libwebsockets/lws-ws-ext.h>
-#include <libwebsockets/lws-protocols-plugins.h>
 #endif
+
+#include <libwebsockets/lws-protocols-plugins.h>
+
 #include <libwebsockets/lws-context-vhost.h>
 
 #if defined(LWS_WITH_NETWORK)

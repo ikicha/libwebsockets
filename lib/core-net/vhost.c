@@ -466,6 +466,7 @@ lws_protocol_init_vhost(struct lws_vhost *vh, int *any)
 		) {
 			lwsl_vhost_info(vh, "init %s.%s", vh->name,
 					vh->protocols[n].name);
+			vh->protocol_init |= 1u << n;
 			if (vh->protocols[n].callback((struct lws *)lwsa,
 				LWS_CALLBACK_PROTOCOL_INIT, NULL,
 #if !defined(LWS_WITH_PLUGINS)
@@ -1108,7 +1109,7 @@ void
 lws_cancel_service(struct lws_context *context)
 {
 	struct lws_context_per_thread *pt = &context->pt[0];
-	short m;
+	unsigned short m;
 
 	if (context->service_no_longer_possible)
 		return;
@@ -1171,6 +1172,7 @@ __lws_create_event_pipes(struct lws_context *context)
 
 			if (lws_wsi_inject_to_loop(pt, wsi))
 					goto bail;
+			return 0;
 		}
 	}
 
@@ -1490,11 +1492,11 @@ __lws_vhost_destroy2(struct lws_vhost *vh)
 		while (n < vh->count_protocols) {
 			wsi.a.protocol = protocol;
 
-			lwsl_vhost_debug(vh, "protocol destroy");
-
-			if (protocol->callback)
+			if (protocol->callback && (vh->protocol_init & (1u << n))) {
+				lwsl_vhost_debug(vh, "protocol %s destroy", protocol->name);
 				protocol->callback(&wsi, LWS_CALLBACK_PROTOCOL_DESTROY,
 					   NULL, NULL, 0);
+			}
 			protocol++;
 			n++;
 		}
@@ -1917,7 +1919,7 @@ lws_vhost_active_conns(struct lws *wsi, struct lws **nwsi, const char *adsin)
 			 * to get there or fail.
 			 */
 
-			lwsl_wsi_notice(wsi, "apply txn queue %s, state 0x%lx",
+			lwsl_wsi_info(wsi, "apply txn queue %s, state 0x%lx",
 					     lws_wsi_tag(w),
 					     (unsigned long)w->wsistate);
 			/*

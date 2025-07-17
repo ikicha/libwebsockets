@@ -137,7 +137,12 @@ static const char * const json_tests[] = {
 	"{" /* test 12: test 11 but done with LEJP_FLAG_FEAT_OBJECT_INDEXES  */
 		"\"array1\": [[\"a\", \"b\", \"b1\"], [\"c\", \"d\", \"d1\"]],"
 		"\"array2\": [[\"e\", \"f\", \"f1\"], [\"g\", \"h\", \"h1\"]]"
-	"}"
+	"}",
+
+	"{" /* test 13: float vs int */
+		"\"a\": 1, \"b\": 1.0, \"c\": 1e-3, \"d\": 1e3"
+	"}",
+	"{}" /* test 14: empty body */
 };
 
 static struct lejp_results {
@@ -438,6 +443,26 @@ static struct lejp_results {
 	{ 15, 1, 2, { 1,  }, "array2[]", "h1" },
 	{ 17, 1, 0, { 1, }, "array2[]", "h1" },
 	{ 3, 1, 0, { 1,  }, "array2[]", "h1" },
+}, r13[] = {
+	{ 0, 0, 0, {  }, "", "h1" },
+	{ 2, 0, 0, {  }, "", "h1" },
+	{ 16, 0, 0, { 0,  }, "", "h1" },
+	{ 5, 0, 0, { 0,  }, "a", "h1" },
+	{ 73, 0, 0, { 0,  }, "a", "1" },
+	{ 5, 0, 0, { 1,  }, "b", "1" },
+	{ 74, 0, 0, { 1,  }, "b", "1.0" },
+	{ 5, 0, 0, { 2,  }, "c", "1.0" },
+	{ 74, 0, 0, { 2,  }, "c", "1e-3" },
+	{ 5, 0, 0, { 3,  }, "d", "1e-3" },
+	{ 74, 0, 0, { 3,  }, "d", "1e3" },
+	{ 17, 0, 0, { 3,  }, "d", "1e3" },
+	{ 3, 0, 0, { 3,  }, "d", "1e3" },
+}, r14[] = {
+	{ 0, 0, 0, {  }, "", "1e3" },
+	{ 2, 0, 0, {  }, "", "1e3" },
+	{ 16, 0, 0, {  }, "", "1e3" },
+	{ 17, 0, 0, {  }, "", "1e3" },
+	{ 3, 0, 0, {  }, "", "1e3" },
 };
 
 static const char * const tok[] = {
@@ -469,6 +494,8 @@ struct lejp_results_pkg {
 	{ r12, LWS_ARRAY_SIZE(r12), tok_test11, LWS_ARRAY_SIZE(tok_test11),
 			LEJP_FLAG_FEAT_LEADING_WC |
 			LEJP_FLAG_FEAT_OBJECT_INDEXES },
+	{ r13, LWS_ARRAY_SIZE(r13), tok, LWS_ARRAY_SIZE(tok), 0 },
+	{ r14, LWS_ARRAY_SIZE(r14), tok, LWS_ARRAY_SIZE(tok), 0 },
 };
 
 

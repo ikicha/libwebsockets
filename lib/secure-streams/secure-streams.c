@@ -129,6 +129,7 @@ const uint32_t ss_state_txn_validity[] = {
 					  (1 << LWSSSCS_CONNECTED) |
 					  (1 << LWSSSCS_TIMEOUT) |
 					  (1 << LWSSSCS_POLL) |
+					  (1 << LWSSSCS_ALL_RETRIES_FAILED) | /* via timeout in this state */
 					  (1 << LWSSSCS_DISCONNECTED) | /* proxy retry */
 					  (1 << LWSSSCS_DESTROYING),
 
@@ -141,6 +142,7 @@ const uint32_t ss_state_txn_validity[] = {
 
 	[LWSSSCS_ALL_RETRIES_FAILED]	= (1 << LWSSSCS_CONNECTING) |
 					  (1 << LWSSSCS_TIMEOUT) |
+					  (1 << LWSSSCS_UNREACHABLE) |
 					  (1 << LWSSSCS_DESTROYING),
 
 	[LWSSSCS_QOS_ACK_REMOTE]	= (1 << LWSSSCS_DISCONNECTED) |
@@ -329,9 +331,9 @@ lws_ss_check_next_state(lws_lifecycle_t *lc, uint8_t *prevstate,
 
 	if (ss_state_txn_validity[*prevstate] & (1u << cs)) {
 
-		lwsl_notice("%s: %s: %s -> %s\n", __func__, lc->gutag,
-			    lws_ss_state_name((int)*prevstate),
-			    lws_ss_state_name((int)cs));
+		lwsl_debug("%s: %s: %s -> %s\n", __func__, lc->gutag,
+			    lws_ss_state_name(*prevstate),
+			    lws_ss_state_name(cs));
 
 		/* this is explicitly allowed, update old state to new */
 		*prevstate = (uint8_t)cs;
@@ -340,8 +342,8 @@ lws_ss_check_next_state(lws_lifecycle_t *lc, uint8_t *prevstate,
 	}
 
 	lwsl_err("%s: %s: transition from %s -> %s is illegal\n", __func__,
-		 lc->gutag, lws_ss_state_name((int)*prevstate),
-		 lws_ss_state_name((int)cs));
+		 lc->gutag, lws_ss_state_name(*prevstate),
+		 lws_ss_state_name(cs));
 
 	assert(0);
 
@@ -378,9 +380,9 @@ lws_ss_check_next_state_ss(lws_ss_handle_t *ss, uint8_t *prevstate,
 
 	if (ss_state_txn_validity[*prevstate] & (1u << cs)) {
 
-		lwsl_ss_notice(ss, "%s -> %s",
-			       lws_ss_state_name((int)*prevstate),
-			       lws_ss_state_name((int)cs));
+		lwsl_ss_debug(ss, "%s -> %s",
+			       lws_ss_state_name(*prevstate),
+			       lws_ss_state_name(cs));
 
 		/* this is explicitly allowed, update old state to new */
 		*prevstate = (uint8_t)cs;
@@ -389,8 +391,8 @@ lws_ss_check_next_state_ss(lws_ss_handle_t *ss, uint8_t *prevstate,
 	}
 
 	lwsl_ss_err(ss, "transition from %s -> %s is illegal",
-		    lws_ss_state_name((int)*prevstate),
-		    lws_ss_state_name((int)cs));
+		    lws_ss_state_name(*prevstate),
+		    lws_ss_state_name(cs));
 
 	assert(0);
 
@@ -398,7 +400,7 @@ lws_ss_check_next_state_ss(lws_ss_handle_t *ss, uint8_t *prevstate,
 }
 
 const char *
-lws_ss_state_name(int state)
+lws_ss_state_name(lws_ss_constate_t state)
 {
 	if (state >= LWSSSCS_USER_BASE)
 		return "user state";
@@ -1413,6 +1415,7 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 		}
 
 		*ppp++ = ss_pcols[h->policy->protocol]->protocol;
+
 #if defined(LWS_ROLE_WS)
 		if (h->policy->u.http.u.ws.subprotocol)
 			/*
@@ -1420,7 +1423,10 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 			 * ss-ws protocol in this vhost
 			 */
 			*ppp++ = &protocol_secstream_ws;
+
+		i.extensions = context->extensions;
 #endif
+
 		*ppp = NULL;
 		i.pprotocols = pprot;
 
@@ -1615,6 +1621,9 @@ lws_ss_destroy(lws_ss_handle_t **ppss)
 		if (h->wsi->bound_ss_proxy_conn) {
 			struct lws_sss_proxy_conn *conn = (struct lws_sss_proxy_conn *)
 				lws_get_opaque_user_data(h->wsi);
+
+			if (!conn)
+				return;
 
 			conn->ss = NULL;
 		}

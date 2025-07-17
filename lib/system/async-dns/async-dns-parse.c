@@ -86,7 +86,9 @@ again1:
 	}
 
 	if (ll > lws_ptr_diff_size_t(ls, ols) + (size_t)budget) {
-		lwsl_notice("%s: label too long %d vs %d\n", __func__, ll, budget);
+		lwsl_notice("%s: label too long %d vs %d (rem budget %d)\n",
+				__func__, ll, budget,
+				(int)(lws_ptr_diff_size_t(ls, ols) + (size_t)budget));
 
 		return -1;
 	}
@@ -136,7 +138,7 @@ typedef int (*lws_async_dns_find_t)(const char *name, void *opaque,
 /* locally query the response packet */
 
 struct label_stack {
-	char name[DNS_MAX];
+	char name[DNS_MAX + 10];
 	int enl;
 	const uint8_t *p;
 };
@@ -157,7 +159,7 @@ lws_adns_iterate(lws_adns_q_t *q, const uint8_t *pkt, int len,
 		 const char *expname, lws_async_dns_find_t cb, void *opaque)
 {
 	const uint8_t *e = pkt + len, *p, *pay;
-	struct label_stack stack[4];
+	struct label_stack stack[8];
 	int n = 0, stp = 0, ansc, m;
 	uint16_t rrtype, rrpaylen;
 	char *sp, inq;
@@ -209,7 +211,7 @@ start:
 
 		/* while we have more labels */
 
-		n = lws_adns_parse_label(pkt, len, p, len, &sp,
+		n = lws_adns_parse_label(pkt, len, p, len - DHO_SIZEOF, &sp,
 					 sizeof(stack[0].name) -
 					 lws_ptr_diff_size_t(sp, stack[0].name));
 		/* includes case name won't fit */

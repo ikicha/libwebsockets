@@ -967,6 +967,11 @@ struct lws_context_creation_info {
 	 * zero.
 	 */
 
+#if defined(LWS_WITH_NETWORK)
+	const char		*wol_if;
+	/**< CONTEXT: NULL, or interface name to bind outgoing WOL packet to */
+#endif
+
 	/* Add new things just above here ---^
 	 * This is part of the ABI, don't needlessly break compatibility
 	 *
@@ -1381,6 +1386,27 @@ struct lws_http_mount {
 
 	const char *basic_auth_login_file;
 	/**<NULL, or filepath to use to check basic auth logins against. (requires LWSAUTHM_DEFAULT) */
+
+	const char *cgi_chroot_path;
+	/**< NULL, or chroot patch for child cgi process */
+
+	const char *cgi_wd;
+	/**< working directory to cd to after fork of a cgi process,
+	 * NULL defaults to /tmp
+	 */
+
+	const struct lws_protocol_vhost_options *headers;
+		/**< NULL, or pointer to optional linked list of
+		 * canned headers that are added to server responses.
+		 * If given, these override the headers given at
+		 * the vhost and are used instead of those when
+		 * the mountpoint matches.  This allows to control,
+		 * eg, CSP on a per-mount basis.
+		 */
+	unsigned int keepalive_timeout;
+		/**< 0 or seconds http stream should stay alive while
+		 * idle.  0 means use the vhost value for keepalive_timeout.
+		 */
 
 	/* Add new things just above here ---^
 	 * This is part of the ABI, don't needlessly break compatibility

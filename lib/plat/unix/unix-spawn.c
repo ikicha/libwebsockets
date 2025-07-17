@@ -364,7 +364,8 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 	for (n = 0; n < 3; n++) {
 		if (pipe(lsp->pipe_fds[n]) == -1)
 			goto bail1;
-		lws_plat_apply_FD_CLOEXEC(lsp->pipe_fds[n][n == 0]);
+		if (lws_plat_apply_FD_CLOEXEC(lsp->pipe_fds[n][n == 0]))
+			lwsl_info("%s: FD_CLOEXEC didn't stick\n", __func__);
 	}
 
 	/*
@@ -423,6 +424,9 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 
 		if (__insert_wsi_socket_into_fds(context, lsp->stdwsi[n]))
 			goto bail3;
+
+		lws_dll2_remove(&lsp->stdwsi[n]->pre_natal);
+
 		if (i->opt_parent) {
 			lsp->stdwsi[n]->parent = i->opt_parent;
 			lsp->stdwsi[n]->sibling_list = i->opt_parent->child_list;
@@ -484,9 +488,9 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 		lwsl_info("%s: lsp %p spawned PID %d\n", __func__, lsp,
 			  lsp->child_pid);
 
-		lws_sul_schedule(context, i->tsi, &lsp->sul, lws_spawn_timeout,
-				 i->timeout_us ? i->timeout_us :
-						   300 * LWS_US_PER_SEC);
+		if (i->timeout_us)
+			lws_sul_schedule(context, i->tsi, &lsp->sul, lws_spawn_timeout,
+					 i->timeout_us);
 
 		if (i->owner)
 			lws_dll2_add_head(&lsp->dll, i->owner);
@@ -512,6 +516,9 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 
 		exit(2);
 	}
+
+	if (chdir("/")) /* cov */
+		lwsl_notice("%s: Failed to cd to /\n", __func__);
 
 	/* cwd: somewhere we can at least read things and enter it */
 
@@ -612,4 +619,12 @@ int
 lws_spawn_get_stdfd(struct lws *wsi)
 {
 	return wsi->lsp_channel;
+}
+
+int
+lws_spawn_get_fd_stdxxx(struct lws_spawn_piped *lsp, int std_idx)
+{
+	assert(std_idx >= 0 && std_idx < 3);
+
+	return lsp->pipe_fds[std_idx][!!(std_idx == 0)];
 }

@@ -25,7 +25,7 @@
 if (PICO_SDK_PATH)
 	cmake_minimum_required(VERSION 3.13)
 else()
-	cmake_minimum_required(VERSION 3.5)
+	cmake_minimum_required(VERSION 3.10)
 endif()
 include(CheckFunctionExists)
 include(CheckSymbolExists)
@@ -49,6 +49,10 @@ endif()
 
 if (POLICY CMP0075)
 	cmake_policy(SET CMP0075 NEW)
+endif()
+
+if(POLICY CMP0091)
+	cmake_policy(SET CMP0091 NEW)
 endif()
 
 # General Advice
@@ -85,6 +89,7 @@ if (ESP_PLATFORM)
        include_directories(
 		$ENV{IDF_PATH}/components/esp_hw_support/include/soc/
 		$ENV{IDF_PATH}/components/freertos/include/
+		$ENV{IDF_PATH}/components/lwip/include/
 		$ENV{IDF_PATH}/components/freertos/esp_additions/include/
 		$ENV{IDF_PATH}/components/freertos/esp_additions/include/freertos/
 		$ENV{IDF_PATH}/components/freertos/FreeRTOS-Kernel/include/
@@ -98,6 +103,22 @@ if (ESP_PLATFORM)
 		$ENV{IDF_PATH}/components/hal/${CONFIG_IDF_TARGET}/include/
 		$ENV{IDF_PATH}/components/app_update/include/
 		$ENV{IDF_PATH}/components/bootloader_support/include
+		$ENV{IDF_PATH}/components/lwip/port/include
+		$ENV{IDF_PATH}/components/lwip/port/freertos/include
+		$ENV{IDF_PATH}/components/lwip/port/esp32xx/include
+		$ENV{IDF_PATH}/components/freertos/config/include/freertos/
+		$ENV{IDF_PATH}/components/freertos/config/${CONFIG_IDF_TARGET_ARCH}/include
+		$ENV{IDF_PATH}/components/freertos/FreeRTOS-Kernel/portable/${CONFIG_IDF_TARGET_ARCH}/include
+		$ENV{IDF_PATH}/components/freertos/FreeRTOS-Kernel/portable/${CONFIG_IDF_TARGET_ARCH}/include/freertos
+		$ENV{IDF_PATH}/components/freertos/config/include
+		$ENV{IDF_PATH}/components/esp_driver_gpio/include
+		$ENV{IDF_PATH}/components/esp_driver_spi/include
+		$ENV{IDF_PATH}/components/esp_driver_ledc/include
+		$ENV{IDF_PATH}/components/esp_partition/include
+		$ENV{IDF_PATH}/components/spi_flash/include
+		$ENV{IDF_PATH}/components/esp_app_format/include
+		$ENV{IDF_PATH}/components/esp_bootloader_format/include
+		$ENV{IDF_PATH}/components/esp_system/include/
 	)
 
 	if (CONFIG_IDF_TARGET_ARCH_RISCV)
@@ -338,9 +359,11 @@ endif()
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 	option(LWS_WITH_NETLINK "Monitor Netlink for Routing Table changes" ON)
 	option(LWS_WITH_BINDTODEVICE "Use bind to interface socket option" ON)
+	option(LWS_WITH_LIBCAP "Enable libcap" ON)
 else()
 	set(LWS_WITH_NETLINK 0)
 	set(LWS_WITH_BINDTODEVICE 0)
+	set(LWS_WITH_LIBCAP OFF)
 endif()
 option(LWS_WITH_MCUFONT_ENCODER "Build the ttf to mcufont encoder" OFF)
 
@@ -368,6 +391,9 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
        set(LWS_SUPPRESS_DEPRECATED_API_WARNINGS 1)
 endif()
 
+if (MSVC)
+	option(LWS_MSVC_STATIC_RUNTIME "Link to static MSVC runtime" OFF)
+endif()
 
 #
 # to use miniz, enable both LWS_WITH_ZLIB and LWS_WITH_MINIZ
@@ -458,7 +484,7 @@ set(PACKAGE "libwebsockets")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_PACKAGE_NAME "${PACKAGE}")
 set(CPACK_PACKAGE_VERSION_MAJOR "4")
-set(CPACK_PACKAGE_VERSION_MINOR "3")
+set(CPACK_PACKAGE_VERSION_MINOR "4")
 set(CPACK_PACKAGE_VERSION_PATCH_NUMBER "99")
 
 set(CPACK_PACKAGE_VERSION_PATCH "${CPACK_PACKAGE_VERSION_PATCH_NUMBER}-${LWS_BUILD_HASH}")
@@ -468,7 +494,7 @@ set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSIO
 set(CPACK_PACKAGE_VENDOR "andy@warmcat.com")
 set(CPACK_PACKAGE_CONTACT "andy@warmcat.com")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PACKAGE} ${CPACK_PACKAGE_VERSION}")
-set(SOVERSION "19")
+set(SOVERSION "20")
 if(NOT CPACK_GENERATOR)
     if(UNIX)
         set(CPACK_GENERATOR "TGZ")
@@ -663,6 +689,7 @@ CHECK_C_SOURCE_COMPILES("#include <pthread.h>\nvoid main(void) { while(1) ; } vo
 CHECK_C_SOURCE_COMPILES("#include <inttypes.h>\nvoid main(void) { while(1) ; } void xxexit(void){}" LWS_HAVE_INTTYPES_H)
 CHECK_C_SOURCE_COMPILES("#include <sys/resource.h>\nvoid main(void) { while(1) ; } void xxexit(void){}" LWS_HAVE_SYS_RESOURCE_H)
 CHECK_C_SOURCE_COMPILES("#include <linux/ipv6.h>\nvoid main(void) { while(1) ; } void xxexit(void){}" LWS_HAVE_LINUX_IPV6_H)
+CHECK_C_SOURCE_COMPILES("#include <sys/types.h>\n#include <net/if_ether.h>\n void main(void) { while (1) ; } void xxexit(void){}" LWS_HAVE_NET_IF_ETHER_H)
 if (LWS_HAVE_SYS_TYPES_H)
 	CHECK_C_SOURCE_COMPILES("#include <sys/types.h>\n#include <net/ethernet.h>\n void main(void) { while (1) ; } void xxexit(void){}" LWS_HAVE_NET_ETHERNET_H)
 else()
@@ -670,6 +697,9 @@ else()
 endif()
 CHECK_C_SOURCE_COMPILES("#include <systemd/sd-daemon.h>\nvoid main(void) { while(1) ; } void xxexit(void){}" LWS_HAVE_SYSTEMD_H)
 
+if (${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+	unset(LWS_HAVE_CTIME_R CACHE)
+endif()
 
 
 if (LWS_EXT_PTHREAD_INCLUDE_DIR)
@@ -726,7 +756,11 @@ if (WIN32 OR MSVC)
 	endif()
 endif()
 
-CHECK_LIBRARY_EXISTS(cap cap_set_flag "" LWS_HAVE_LIBCAP)
+if (LWS_WITH_LIBCAP)
+   CHECK_LIBRARY_EXISTS(cap cap_set_flag "" LWS_HAVE_LIBCAP)
+else()
+   set(LWS_HAVE_LIBCAP OFF)
+endif()
 
 
 if (LWS_WITH_ZLIB AND NOT LWS_WITH_BUNDLED_ZLIB)
@@ -905,6 +939,13 @@ if (COMPILER_IS_CLANG)
 	endif()
 endif()
 
+if (${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+		list(APPEND LIB_LIST_AT_END -lsocket)
+		if ((CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX))
+			set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-conversion")
+		endif()
+endif()
+
 if (WINCE)
 	list(APPEND LIB_LIST_AT_END ws2.lib)
 elseif (WIN32)
@@ -921,6 +962,31 @@ if (MSVC)
 		add_compile_options(/Zc:preprocessor /wd5105)
 	else()
 		add_compile_options(/experimental:preprocessor /wd5105)
+	endif()
+	if (LWS_MSVC_STATIC_RUNTIME AND NOT LWS_WITH_STATIC)
+		message(FATAL_ERROR "Incompatible options: when LWS_MSVC_STATIC_RUNTIME=ON, must also set LWS_WITH_STATIC=ON")
+	endif()
+	if (LWS_MSVC_STATIC_RUNTIME)
+		if (LWS_WITH_SHARED)
+			message(FATAL_ERROR "Incompatible options: when LWS_MSVC_STATIC_RUNTIME=ON, must also set LWS_WITH_SHARED=OFF")
+		endif()
+		if (${CMAKE_VERSION} VERSION_GREATER 3.15 OR ${CMAKE_VERSION} VERSION_EQUAL 3.15)
+			set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+		else()
+			# Link the runtime library statically so that MSVCR*.DLL is not required at runtime.
+			# https://msdn.microsoft.com/en-us/library/2kzt1wy3.aspx
+			# This is achieved by replacing msvc option /MD with /MT and /MDd with /MTd
+			# http://www.cmake.org/Wiki/CMake_FAQ#How_can_I_build_my_MSVC_application_with_a_static_runtime.3F
+			foreach (flag_var
+					CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+					CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+				if(${flag_var} MATCHES "/MD")
+					string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+				endif()
+			endforeach()
+		endif()
+	else()
+		set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>DLL)
 	endif()
 endif(MSVC)
 

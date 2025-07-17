@@ -263,7 +263,7 @@ int lws_open(const char *__file, int __oflag, ...)
 int
 lws_pthread_self_to_tsi(struct lws_context *context)
 {
-#if LWS_MAX_SMP > 1
+#if defined(LWS_WITH_NETWORK) && LWS_MAX_SMP > 1
 	pthread_t ps = pthread_self();
 	struct lws_context_per_thread *pt = &context->pt[0];
 	int n;
@@ -416,10 +416,11 @@ lws_check_utf8(unsigned char *state, unsigned char *buf, size_t len)
 char *
 lws_strdup(const char *s)
 {
-	char *d = lws_malloc(strlen(s) + 1, "strdup");
+	size_t l = strlen(s) + 1;
+	char *d = lws_malloc(l, "strdup");
 
 	if (d)
-		strcpy(d, s);
+		memcpy(d, s, l);
 
 	return d;
 }
@@ -867,7 +868,7 @@ lws_snprintf(char *str, size_t size, const char *format, ...)
 	va_list ap;
 	int n;
 
-	if (!size)
+	if (!str || !size)
 		return 0;
 
 	va_start(ap, format);
@@ -1069,12 +1070,15 @@ lws_tokenize(struct lws_tokenize *ts)
 
 		if (!utf8 &&
 		     ((ts->flags & LWS_TOKENIZE_F_RFC7230_DELIMS &&
-		     strchr(rfc7230_delims, c) && c > 32) ||
-		    ((!(ts->flags & LWS_TOKENIZE_F_RFC7230_DELIMS) &&
-		     (c < '0' || c > '9') && (c < 'A' || c > 'Z') &&
-		     (c < 'a' || c > 'z') && c != '_') &&
-		     c != s_minus && c != s_dot && c != s_star && c != s_eq) ||
-		    c == d_minus || c == d_dot || c == d_star || c == d_eq
+		       strchr(rfc7230_delims, c) && c > 32) ||
+		       ((!(ts->flags & LWS_TOKENIZE_F_RFC7230_DELIMS) &&
+		        (c < '0' || c > '9') && (c < 'A' || c > 'Z') &&
+		        (c < 'a' || c > 'z') && c != '_') &&
+		        c != s_minus && c != s_dot && c != s_star && c != s_eq) ||
+		        c == d_minus ||
+			c == d_dot ||
+			c == d_star ||
+			c == d_eq
 		    ) &&
 		    !((ts->flags & LWS_TOKENIZE_F_COLON_NONTERM) && c == ':') &&
 		    !((ts->flags & LWS_TOKENIZE_F_SLASH_NONTERM) && c == '/')) {
@@ -1418,7 +1422,7 @@ lws_strcmp_wildcard(const char *wildcard, size_t wlen, const char *check,
 	return wildcard != wc_end;
 }
 
-#if LWS_MAX_SMP > 1
+#if defined(LWS_WITH_NETWORK) && LWS_MAX_SMP > 1
 
 void
 lws_mutex_refcount_init(struct lws_mutex_refcount *mr)
@@ -1519,7 +1523,7 @@ lws_cmdline_option(int argc, const char **argv, const char *val)
 	while (--c > 0) {
 
 		if (!strncmp(argv[c], val, n)) {
-			if (!*(argv[c] + n) && c < argc - 1) {
+			if (c < argc - 1 && !*(argv[c] + n)) {
 				/* coverity treats unchecked argv as "tainted" */
 				if (!argv[c + 1] || strlen(argv[c + 1]) > 1024)
 					return NULL;
